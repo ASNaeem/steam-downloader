@@ -1,0 +1,13 @@
+# Personal data: API key and saved game folders
+settings.json
+.env
+
+# Generated on each run
+keys.txt
+*.manifest
+temp_depot_data/
+depots/
+
+# Editor / Python
+.vscode/
+__pycache__/
