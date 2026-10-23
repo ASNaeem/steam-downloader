@@ -53,9 +53,10 @@ Unchanged files are always left alone. For the files that changed, the script sh
 Enter picks Patch if it fits in the free space, otherwise Re-download. Download sizes are compressed, which is what actually goes over the network.
 
 - **First time:** enter the path of your existing game folder, for example `D:\Games\MyGame`.
-  - The script doesn't yet know which version is installed, so it hashes every local file and compares it with the new manifest.
-  - This check reads the whole game from disk, so it can take a while on large games.
-  - Because the old version is unknown, the Patch download size is shown as "up to" the full size.
+  - The script doesn't yet know which version is installed. It first checks the older manifests saved in the project folder: each run saves the manifests it receives there as `<DepotID>_<ManifestID>.manifest`.
+  - If the game files match one of them, that version is used as the installed version. Only the changed chunks are downloaded, as in a normal update.
+  - If none match, it hashes every local file against the new version. Only files that don't match are downloaded, but a large file whose contents shifted (common for pak files) may be downloaded almost in full. The Patch size is then marked **(approximate)**.
+  - **Tip:** if you got the game files from someone who uses this script, ask them for the matching `.manifest` file, or for the `.DepotDownloader` folder from their game folder. Put it in your project folder (or game folder) before your first update.
 - **Later updates:** the saved folder is shown. Press Enter to keep it.
   - The script compares the installed manifest with the new one. It also catches files that are missing or the wrong size on disk.
   - Files that were removed from the game are deleted.

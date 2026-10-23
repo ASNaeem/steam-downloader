@@ -315,6 +315,25 @@ def chunk_match(path, info, samples=64):
             matched += hashlib.sha1(f.read(length)).hexdigest() == sha
     return matched / len(picked)
 
+def guess_installed(root, depot_id, manifest_file, threshold=0.9):
+    """Looks for an older <depot>_<manifest>.manifest in the project folder whose
+    chunks are on disk (sampled from the largest files). Returns its path or None."""
+    best, best_score = None, 0.0
+    for candidate in Path(".").glob(f"{depot_id}_*.manifest"):
+        if candidate.name == Path(manifest_file).name:
+            continue
+        files = read_manifest_files(candidate)
+        if not files:
+            continue
+        largest = sorted(files.items(), key=lambda kv: kv[1]["size"], reverse=True)[:5]
+        scores = [chunk_match(root / f, info, samples=16) if (root / f).is_file()
+                  and (root / f).stat().st_size == info["size"] else 0.0
+                  for f, info in largest]
+        score = sum(scores) / len(scores)
+        if score > best_score:
+            best, best_score = candidate, score
+    return best if best_score >= threshold else None
+
 def plan_update(install_dir, depot_id, manifest_file):
     """Returns None if already up to date, else a dict with the changed/removed
     files (both None if the manifest can't be read). Changed files are split into:
@@ -350,8 +369,19 @@ def plan_update(install_dir, depot_id, manifest_file):
                 plan["resume"][f] = new_match
         return plan
 
+    # No record: maybe the files match an older manifest saved in the project folder
+    guess = guess_installed(root, depot_id, manifest_file)
+    if guess:
+        print(f"[*] No record of the installed version, but the files match {guess.name} "
+              "(saved in the project folder). Using it as the installed version.")
+        save_installed(install_dir, depot_id, guess)
+        return plan_update(install_dir, depot_id, manifest_file)
+
     # Unknown installed version: compare every local file with the new manifest
-    print("[*] No record of the installed version: checking every file (slow once)...")
+    print("[*] First update in this folder and no matching older manifest found:")
+    print("    checking every file against the new version (slow once).")
+    print("    Tip: put the manifest of the version you have in the project folder to skip this,")
+    print("    so only changed chunks are downloaded.")
     plan["changed"] = []
     for n, (f, info) in enumerate(new.items(), 1):
         print(f"    [{n}/{len(new)}] {f}", end="\r")
