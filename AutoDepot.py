@@ -104,6 +104,56 @@ def filter_redist(manifest_files):
         return manifest_files
     return [m for m in manifest_files if m not in redist]
 
+def depot_names():
+    """{depot_id: name} from the comments in the Lua files ("addappid(...) -- Name")."""
+    names = {}
+    for lua_file in TEMP_DIR.glob("*.lua"):
+        content = lua_file.read_text(encoding="utf-8", errors="ignore")
+        for depot_id, name in re.findall(r'^addappid\((\d+)[^)]*\)\s*--\s*(.+)$', content, re.M):
+            names[depot_id] = name.strip()
+    return names
+
+def depot_platform(name, manifest_file):
+    """Guesses the OS a depot is for: "windows", "mac", "linux" or None."""
+    if re.search(r"\b(mac|macos|osx|os x)\b", name, re.I):
+        return "mac"
+    if re.search(r"\b(linux|steamos)\b", name, re.I):
+        return "linux"
+    files = read_manifest_files(manifest_file) or {}
+    if any(f.lower().endswith(".exe") for f in files):
+        return "windows"
+    if any(f.lower().endswith(".dylib") or ".app/Contents/" in f or f.startswith("Contents/MacOS/")
+           for f in files):
+        return "mac"
+    if any(f.lower().endswith((".so", ".x86_64")) for f in files):
+        return "linux"
+    return None
+
+def filter_platform(manifest_files):
+    """Offers to skip depots for another OS (e.g. a Mac depot on Windows),
+    which would otherwise be downloaded into the same folder."""
+    current = {"win32": "windows", "darwin": "mac"}.get(sys.platform, "linux")
+    names = depot_names()
+    other = []
+    for m in manifest_files:
+        if not re.match(r"^\d+_", m):
+            continue
+        depot_id = m.split("_")[0]
+        platform = depot_platform(names.get(depot_id, ""), m)
+        if platform and platform != current:
+            other.append((m, names.get(depot_id, f"Depot {depot_id}"), platform))
+    if not other:
+        return manifest_files
+
+    print(f"\n[*] Found {len(other)} depot(s) for another OS (you're on {current}):")
+    for m, name, platform in other:
+        print(f"    - {m}  ({name}, {platform})")
+    answer = input("    Skip them? [Y/n]: ").strip().lower()
+    if answer in ("n", "no"):
+        return manifest_files
+    skip = {m for m, _, _ in other}
+    return [m for m in manifest_files if m not in skip]
+
 def check_exe():
     if not os.path.exists(EXE_NAME):
         clean_exit(f"Error: {EXE_NAME} not found in this folder!")
@@ -619,7 +669,7 @@ def main():
         download_and_extract(app_id_input)
  
         # 2. Prepare Keys and Manifests
-        manifest_list = filter_redist(parse_keys_and_prepare())
+        manifest_list = filter_platform(filter_redist(parse_keys_and_prepare()))
 
         if not manifest_list:
             print("❌ No manifest file found to download.")
